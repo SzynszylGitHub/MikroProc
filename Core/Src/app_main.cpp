@@ -69,9 +69,9 @@ constexpr float dt = 0.1;
 constexpr int dt_sleep = dt*1000;
 constexpr uint16_t max_pwm = 1000;
 constexpr uint16_t min_pwm = 0;
-constexpr float Kp = 25;
-constexpr float Ki = 0.5;
-constexpr float Kd = 10;
+constexpr float Kp = 100;
+constexpr float Ki = 0.1;
+constexpr float Kd = 30;
 constexpr float Tf = 0.05;
 
 // =========================================================================
@@ -82,7 +82,7 @@ void app_main(void)
 	BMP280_Init(&hi2c1, BMP280_TEMPERATURE_16BIT, BMP280_STANDARD, BMP280_FORCEDMODE);
 
 	PID pid(dt,max_pwm,min_pwm,Kp,Ki,Kd,Tf);
-	float yr = 28;
+	float yr = 25;
 	uint16_t u = 0;
 	uint16_t lu = 0;
 	float lt = 0;
@@ -91,18 +91,22 @@ void app_main(void)
 
 	while(1)
 	{
-		lu = u;
-		lt = temperature;
-		// potwierdzenie odebrania wiadomosci
-		if(lu != u || lt != temperature) {
-
-			//int number_to_process = Rn.received_number;
-			//Rn.new_number_ready = false;
-
-			std::string msg = "u:{"+ std::to_string(int(u)) + "},t:{" + std::to_string(int(temperature)) + "}";
-			HAL_UART_Transmit(&huart3, (uint8_t*)msg.c_str(), msg.length(), 100);
-
-		}
+// oczekujemy lepszej bramki np: nmos IRLML6402
+//		BMP280_ReadTemperatureAndPressure(&temperature, &pressure);
+//
+//		u = pid.calculate(yr,temperature);
+//		__HAL_TIM_SET_COMPARE(&htim1 , TIM_CHANNEL_1 ,u) ;
+//
+//		// potwierdzenie odebrania wiadomosci
+//		if(lu != u || lt != temperature) {
+//
+//			//int number_to_process = Rn.received_number;
+//			//Rn.new_number_ready = false;
+//
+//			std::string msg = "u:{"+ std::to_string(int(u)) + "},t:{" + std::to_string(int(temperature)) + "}";
+//			HAL_UART_Transmit(&huart3, (uint8_t*)msg.c_str(), msg.length(), 100);
+//
+//		}
 
 		if(time_stemp >= last_time + 1000)
 		{
@@ -110,12 +114,6 @@ void app_main(void)
 			HAL_UART_Transmit(&huart3, (uint8_t*)msg.c_str(), msg.length(), 100);
 			last_time = time_stemp;
 		}
-
-		BMP280_ReadTemperatureAndPressure(&temperature, &pressure);
-
-		u = pid.calculate(yr,temperature);
-		__HAL_TIM_SET_COMPARE (&htim1 , TIM_CHANNEL_1 ,u) ;
-		Utest = u;
 
 		time_stemp += dt_sleep;
 		HAL_Delay(dt_sleep);

@@ -20,6 +20,12 @@ public:
     double calculate(double yr, double y) {
         
         double error = yr - y;
+        // ze względu na zasilanie o niskim napięciu
+        // dla uchybu poniżej 20% będzie działał jako dwu położeniowy
+        // dla testowania ułatwi nam to życie
+        if(error *0.8 < error)
+        	if(error > 0 ) return _max;
+        		else return _min;
 
         double P = _Kp * error; // P 
 
@@ -30,7 +36,7 @@ public:
         double D = (alpha * pre_D) + ( (1 - alpha)*_Kd * derivative / _dt ); // D with filter
         pre_D = D;
 
-        double v = P;//+I+D;
+        double v = P+I+D;
         double u = clamp(v, _min, _max); // saturation
 
         es = v - u; // filter I 
