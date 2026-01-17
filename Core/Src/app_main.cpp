@@ -6,11 +6,14 @@
  */
 #include "app_main.hpp"
 #include "main.h"
+
 #include <cstdlib>
 #include <string>
 #include <numeric>
 #include "BMPXX80.h"
+
 #include "PID.hpp"
+#include "Transport.hpp"
 
 extern "C"{
 	extern UART_HandleTypeDef huart3;
@@ -24,7 +27,9 @@ extern "C"{
 // ========================================================
 struct ValueReceive{
 	int received_number = 0;
-	bool new_number_ready = false;
+	float receive_float_number = 0.f;
+	bool new_data_ready = false;
+	int command_type = 0;
 };
 
 volatile ValueReceive Rn;
@@ -37,33 +42,53 @@ uint8_t rx_index = 0;         // Licznik pozycji w buforze
 
 extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
+    if (huart->Instance == USART3) {
 
-	if (huart->Instance == USART3) {
-
+        // Sprawdzamy znak końca linii
         if (rx_byte == '\n' || rx_byte == '\r') {
 
             rx_buffer[rx_index] = '\0';
 
             if (rx_index > 0) {
-                Rn.received_number = std::atoi(rx_buffer);
-                Rn.new_number_ready = true;
+
+                if (std::strcmp(rx_buffer, "/safe data") == 0) {
+                    Rn.command_type = 1;
+                    Rn.new_data_ready = true;
+                }
+                else if (std::strcmp(rx_buffer, "/stop") == 0) {
+                    Rn.command_type = 2;
+                    Rn.new_data_ready = true;
+                }
+                else if (std::strcmp(rx_buffer, "/monitor") == 0){
+                	Rn.command_type = 3;
+                	Rn.new_data_ready = true;
+                }
+                else if (std::sscanf(rx_buffer, "/set yr: %f", &Rn.receive_float_number) == 1) {
+                    Rn.command_type = 4;
+                    Rn.new_data_ready = true;
+                }
+                else {
+                    Rn.received_number = std::atoi(rx_buffer);
+                    Rn.command_type = 0;
+                    Rn.new_data_ready = true;
+                }
             }
 
+            // Resetujemy bufor
             rx_index = 0;
-           // memset(rx_buffer, 0, RX_BUFFER_SIZE);
-
 
         } else {
+            // Zbieranie znaków do bufora
             if (rx_index < RX_BUFFER_SIZE - 1) {
                 rx_buffer[rx_index++] = (char)rx_byte;
             }
         }
 
+        // Ponowny nasłuch przerwania
         HAL_UART_Receive_IT(&huart3, &rx_byte, 1);
     }
-}
-// -------------------------------------------------------------------------------------------------------
-// nastawy PID
+}// -------------------------------------------------------------------------------------------------------
+// nastawy PID narazie sa i tle
 //==========================================================================
 constexpr float dt = 0.1;
 constexpr int dt_sleep = dt*1000;
@@ -79,17 +104,34 @@ void app_main(void)
 {
 	// nasluchiwanie com start
 	HAL_UART_Receive_IT(&huart3, &rx_byte, 1);
-	BMP280_Init(&hi2c1, BMP280_TEMPERATURE_16BIT, BMP280_STANDARD, BMP280_FORCEDMODE);
 
-	PID pid(dt,max_pwm,min_pwm,Kp,Ki,Kd,Tf);
-	float yr = 25;
-	uint16_t u = 0;
-	uint16_t lu = 0;
-	float lt = 0;
-	uint32_t time_stemp = 0;
-	uint32_t last_time = 0 ;
+	// uruchomienie czujnika
+	//BMP280_Init(&hi2c1, BMP280_TEMPERATURE_16BIT, BMP280_STANDARD, BMP280_FORCEDMODE);
 
-	while(1)
+	// ======================================
+	// transfer data mechanism
+	CsvLogger logger(&huart3);
+	uint32_t now = 0;
+
+	bool safeData = false;
+	bool monitorData = false;
+	// ======================================
+
+	// ======================================================
+	// data to test safe mechanism
+	float fake_data[] = {
+	#include "../../PythonScripts/wynik.txt"
+	};
+	uint16_t idx = 0;
+	// ======================================================
+
+
+	// ======================================================
+	// regulacja PID
+	float yr = 0.0;
+
+	// ======================================================
+	while(true)
 	{
 // oczekujemy lepszej bramki np: nmos IRLML6402
 //		BMP280_ReadTemperatureAndPressure(&temperature, &pressure);
@@ -97,27 +139,52 @@ void app_main(void)
 //		u = pid.calculate(yr,temperature);
 //		__HAL_TIM_SET_COMPARE(&htim1 , TIM_CHANNEL_1 ,u) ;
 //
-//		// potwierdzenie odebrania wiadomosci
-//		if(lu != u || lt != temperature) {
-//
-//			//int number_to_process = Rn.received_number;
-//			//Rn.new_number_ready = false;
-//
-//			std::string msg = "u:{"+ std::to_string(int(u)) + "},t:{" + std::to_string(int(temperature)) + "}";
-//			HAL_UART_Transmit(&huart3, (uint8_t*)msg.c_str(), msg.length(), 100);
-//
-//		}
-
-		if(time_stemp >= last_time + 1000)
-		{
-			std::string msg = "time:" + std::to_string(time_stemp);
-			HAL_UART_Transmit(&huart3, (uint8_t*)msg.c_str(), msg.length(), 100);
-			last_time = time_stemp;
+		// obsluga komend
+		if(Rn.new_data_ready){
+			switch(Rn.command_type){
+				case 1:{ // start sharing data
+					safeData = true;
+				}break;
+				case 2:{ // stop sharing data
+					safeData = false;
+					monitorData = false;
+				}break;
+				case 3:{ // monitor data
+					monitorData = true;
+				}break;
+				case 4:{
+					yr = Rn.receive_float_number;
+				}
+				default:{// potwierdzenie odebrania wiadomosci
+					std::string msg = std::to_string(Rn.received_number);
+					HAL_UART_Transmit(&huart3, (uint8_t*)msg.c_str(), msg.length(), 100);
+				}break;
+			}
+			// pod odczycie zmieniamy wartosc na odczytana
+			Rn.new_data_ready = false;
 		}
 
-		time_stemp += dt_sleep;
-		HAL_Delay(dt_sleep);
+		if(safeData){
+			logger.log(now,fake_data[idx]);
+			idx++;
+
+			if(idx > 500){
+				safeData = false;
+				idx = 0;
+			}
+		}
+
+		if(monitorData)
+		{
+			now = HAL_GetTick();
+			logger.log(now,fake_data[idx]);
+			idx++;
+			if(idx > 500){
+				safeData = false;
+				idx = 0;
+			}
+			HAL_Delay(5000); // delay miedzy wiadomosciami 5 sek, aby nie zaspamic
+		}
+
 	}
 }
-
-
