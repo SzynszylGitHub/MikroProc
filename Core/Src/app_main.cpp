@@ -18,7 +18,7 @@ extern "C"{
 	extern TIM_HandleTypeDef htim1;
 	extern float temperature;
 	extern long pressure;
-	extern int Utest;
+	extern float Utest;
 }
 // komunikacja
 // ========================================================
@@ -92,21 +92,43 @@ void app_main(void)
 	while(1)
 	{
 // oczekujemy lepszej bramki np: nmos IRLML6402
-//		BMP280_ReadTemperatureAndPressure(&temperature, &pressure);
-//
-//		u = pid.calculate(yr,temperature);
-//		__HAL_TIM_SET_COMPARE(&htim1 , TIM_CHANNEL_1 ,u) ;
-//
-//		// potwierdzenie odebrania wiadomosci
-//		if(lu != u || lt != temperature) {
-//
-//			//int number_to_process = Rn.received_number;
-//			//Rn.new_number_ready = false;
-//
-//			std::string msg = "u:{"+ std::to_string(int(u)) + "},t:{" + std::to_string(int(temperature)) + "}";
-//			HAL_UART_Transmit(&huart3, (uint8_t*)msg.c_str(), msg.length(), 100);
-//
-//		}
+		//BMP280_ReadTemperatureAndPressure(&temperature, &pressure);
+		temperature = BMP280_ReadTemperature();
+
+		    // SPRAWDZENIE BŁĘDU I RESET I2C
+		    if (temperature == -99)
+		    {
+		        // 1. Opcjonalnie: mrugnij diodą, żebyś widział, że był błąd
+		        //HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+
+		        // 2. Resetujemy interfejs I2C
+		        HAL_I2C_DeInit(&hi2c1);  // Wyłącz I2C (zwolnij piny)
+		        HAL_Delay(10);           // Krótka przerwa
+		        HAL_I2C_Init(&hi2c1);    // Włącz I2C na nowo (zastąp &hi2c1 swoją nazwą)
+
+		        // 3. Ewentualnie ponowna inicjalizacja czujnika, jeśli wymaga
+		        BMP280_Init(&hi2c1, BMP280_TEMPERATURE_16BIT, BMP280_STANDARD, BMP280_FORCEDMODE);
+
+
+		        HAL_Delay(100); // Daj chwilę na ustabilizowanie
+		        continue;       // Spróbuj ponownie w następnej pętli
+		    }
+
+		    // Dalsza część kodu wykonuje się tylko, jeśli pomiar był OK
+		    u = pid.calculate(yr, temperature);
+		    Utest = u;
+		    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, u);
+
+		// potwierdzenie odebrania wiadomosci
+		if(lu != u || lt != temperature) {
+
+			//int number_to_process = Rn.received_number;
+			//Rn.new_number_ready = false;
+
+			std::string msg = "u:{"+ std::to_string(int(u)) + "},t:{" + std::to_string(int(temperature)) + "}";
+			HAL_UART_Transmit(&huart3, (uint8_t*)msg.c_str(), msg.length(), 100);
+
+		}
 
 		if(time_stemp >= last_time + 1000)
 		{
