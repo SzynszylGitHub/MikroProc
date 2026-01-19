@@ -49,30 +49,30 @@ extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
             rx_buffer[rx_index] = '\0';
 
-            if (rx_index > 0) {
-
-                if (std::strcmp(rx_buffer, "/safe data") == 0) {
-                    Rn.command_type = 1;
-                    Rn.new_data_ready = true;
-                }
-                else if (std::strcmp(rx_buffer, "/stop") == 0) {
-                    Rn.command_type = 2;
-                    Rn.new_data_ready = true;
-                }
-                else if (std::strcmp(rx_buffer, "/monitor") == 0){
-                	Rn.command_type = 3;
-                	Rn.new_data_ready = true;
-                }
-                else if (std::sscanf(rx_buffer, "/set yr: %f", &Rn.receive_float_number) == 1) {
-                    Rn.command_type = 4;
-                    Rn.new_data_ready = true;
-                }
-                else {
-                    Rn.received_number = std::atoi(rx_buffer);
-                    Rn.command_type = 0;
-                    Rn.new_data_ready = true;
-                }
-            }
+//            if (rx_index > 0) {
+//
+//                if (std::strcmp(rx_buffer, "/safe data") == 0) {
+//                    Rn.command_type = 1;
+//                    Rn.new_data_ready = true;
+//                }
+//                else if (std::strcmp(rx_buffer, "/stop") == 0) {
+//                    Rn.command_type = 2;
+//                    Rn.new_data_ready = true;
+//                }
+//                else if (std::strcmp(rx_buffer, "/monitor") == 0){
+//                	Rn.command_type = 3;
+//                	Rn.new_data_ready = true;
+//                }
+//                else if (std::sscanf(rx_buffer, "/set yr: %f", &Rn.receive_float_number) == 1) {
+//                    Rn.command_type = 4;
+//                    Rn.new_data_ready = true;
+//                }
+//                else {
+//                    Rn.received_number = std::atoi(rx_buffer);
+//                    Rn.command_type = 0;
+//                    Rn.new_data_ready = true;
+//                }
+//            }
 
             // Resetujemy bufor
             rx_index = 0;
@@ -106,7 +106,7 @@ void app_main(void)
 	HAL_UART_Receive_IT(&huart3, &rx_byte, 1);
 
 	// uruchomienie czujnika
-	//BMP280_Init(&hi2c1, BMP280_TEMPERATURE_16BIT, BMP280_STANDARD, BMP280_FORCEDMODE);
+	BMP280_Init(&hi2c1, BMP280_TEMPERATURE_16BIT, BMP280_STANDARD, BMP280_FORCEDMODE);
 
 	// ======================================
 	// transfer data mechanism
@@ -128,63 +128,66 @@ void app_main(void)
 
 	// ======================================================
 	// regulacja PID
-	float yr = 0.0;
-
+	PID pid(dt,max_pwm,min_pwm,Kp,Ki,Kd,Tf);
+	float yr = 28.f;
+	float u = 0.f;
 	// ======================================================
 	while(true)
 	{
 // oczekujemy lepszej bramki np: nmos IRLML6402
-//		BMP280_ReadTemperatureAndPressure(&temperature, &pressure);
+		//BMP280_ReadTemperatureAndPressure(&temperature, &pressure);
+		temperature = BMP280_ReadTemperature();
+		u = pid.calculate(yr,temperature);
+		Utest = u;
+		__HAL_TIM_SET_COMPARE(&htim1 , TIM_CHANNEL_1 ,u);
+		HAL_Delay(1000);
+
+//		// obsluga komend
+//				if(Rn.new_data_ready){
+//					switch(Rn.command_type){
+//						case 1:{ // start sharing data
+//							safeData = true;
+//						}break;
+//						case 2:{ // stop sharing data
+//							safeData = false;
+//							monitorData = false;
+//						}break;
+//						case 3:{ // monitor data
+//							monitorData = true;
+//						}break;
+//						case 4:{
+//							yr = Rn.receive_float_number;
+//						}
+//						default:{// potwierdzenie odebrania wiadomosci
+//							std::string msg = std::to_string(Rn.received_number);
+//							HAL_UART_Transmit(&huart3, (uint8_t*)msg.c_str(), msg.length(), 100);
+//						}break;
+//					}
+//					// pod odczycie zmieniamy wartosc na odczytana
+//					Rn.new_data_ready = false;
+//				}
 //
-//		u = pid.calculate(yr,temperature);
-//		__HAL_TIM_SET_COMPARE(&htim1 , TIM_CHANNEL_1 ,u) ;
+//				if(safeData){
+//					logger.log(now,fake_data[idx]);
+//					idx++;
 //
-		// obsluga komend
-		if(Rn.new_data_ready){
-			switch(Rn.command_type){
-				case 1:{ // start sharing data
-					safeData = true;
-				}break;
-				case 2:{ // stop sharing data
-					safeData = false;
-					monitorData = false;
-				}break;
-				case 3:{ // monitor data
-					monitorData = true;
-				}break;
-				case 4:{
-					yr = Rn.receive_float_number;
-				}
-				default:{// potwierdzenie odebrania wiadomosci
-					std::string msg = std::to_string(Rn.received_number);
-					HAL_UART_Transmit(&huart3, (uint8_t*)msg.c_str(), msg.length(), 100);
-				}break;
-			}
-			// pod odczycie zmieniamy wartosc na odczytana
-			Rn.new_data_ready = false;
-		}
-
-		if(safeData){
-			logger.log(now,fake_data[idx]);
-			idx++;
-
-			if(idx > 500){
-				safeData = false;
-				idx = 0;
-			}
-		}
-
-		if(monitorData)
-		{
-			now = HAL_GetTick();
-			logger.log(now,fake_data[idx]);
-			idx++;
-			if(idx > 500){
-				safeData = false;
-				idx = 0;
-			}
-			HAL_Delay(5000); // delay miedzy wiadomosciami 5 sek, aby nie zaspamic
-		}
+//					if(idx > 500){
+//						safeData = false;
+//						idx = 0;
+//					}
+//				}
+//
+//				if(monitorData)
+//				{
+//					now = HAL_GetTick();
+//					logger.log(now,fake_data[idx]);
+//					idx++;
+//					if(idx > 500){
+//						safeData = false;
+//						idx = 0;
+//					}
+//					HAL_Delay(5000); // delay miedzy wiadomosciami 5 sek, aby nie zaspamic
+//				}
 
 	}
 }
