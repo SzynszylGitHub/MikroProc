@@ -23,7 +23,7 @@ public:
         // ze względu na zasilanie o niskim napięciu
         // dla uchybu poniżej 20% będzie działał jako dwu położeniowy
         // dla testowania ułatwi nam to życie
-        if(error *0.8 < error)
+        if(yr > y)
         	if(error > 0 ) return _max;
         		else return _min;
 

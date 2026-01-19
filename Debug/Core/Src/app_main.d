@@ -29,8 +29,7 @@ Core/Src/app_main.o: ../Core/Src/app_main.cpp ../Core/Inc/app_main.hpp \
  ../Drivers/STM32H5xx_HAL_Driver/Inc/stm32h5xx_hal_uart.h \
  ../Drivers/STM32H5xx_HAL_Driver/Inc/stm32h5xx_hal_uart_ex.h \
  ../Drivers/STM32H5xx_HAL_Driver/Inc/stm32h5xx_hal_exti.h \
- ../Core/Inc/BMPXX80.h ../Core/Inc/PID.hpp ../Core/Inc/Transport.hpp \
- ../Core/Src/../../PythonScripts/wynik.txt
+ ../Core/Inc/BMPXX80.h ../Core/Inc/PID.hpp ../Core/Inc/Transport.hpp
 ../Core/Inc/app_main.hpp:
 ../Core/Inc/main.h:
 ../Drivers/STM32H5xx_HAL_Driver/Inc/stm32h5xx_hal.h:
@@ -66,4 +65,3 @@ Core/Src/app_main.o: ../Core/Src/app_main.cpp ../Core/Inc/app_main.hpp \
 ../Core/Inc/BMPXX80.h:
 ../Core/Inc/PID.hpp:
 ../Core/Inc/Transport.hpp:
-../Core/Src/../../PythonScripts/wynik.txt:
