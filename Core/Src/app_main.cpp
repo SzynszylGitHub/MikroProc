@@ -2,16 +2,16 @@
  * app_main.cpp
  *
  * Created on: Dec 27, 2025
- * Author: Szynszyl & Fixed by Gemini
+ * Author: Szynszyl
  */
 #include "app_main.hpp"
 #include "main.h"
 
 #include <cstdlib>
-#include <cstring> // Poprawiono includy (cstring dla strcmp)
+#include <cstring>
 #include <string>
 #include <numeric>
-#include <cstdio>  // Dla sscanf
+#include <cstdio>
 #include "BMPXX80.h"
 
 #include "PID.hpp"
@@ -39,7 +39,6 @@ struct ValueReceive{
 volatile ValueReceive Rn;
 
 // ----------------------------------- C style ------------------------------------
-// ZWIĘKSZONO BUFOR - 10 znaków to za mało na "/set yr: 24.5"
 constexpr std::size_t RX_BUFFER_SIZE = 32;
 uint8_t rx_byte;
 char rx_buffer[RX_BUFFER_SIZE];
@@ -53,26 +52,26 @@ extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
             rx_buffer[rx_index] = '\0'; // Null-terminator
 
             if (rx_index > 0) {
-                if (std::strcmp(rx_buffer, "/safeData") == 0) {
-                    Rn.command_type = 1;
+                if (std::sscanf(rx_buffer, "/safeData: %d", &Rn.received_number)) {
+                    constexpr uint16_t probes = 1000;
+                	if(!Rn.receive_float_number) Rn.receive_number = probes;
+                	Rn.command_type = 1;
                     Rn.new_data_ready = true;
                 }
-                else if (std::strcmp(rx_buffer, "/stop") == 0) {
+                else if (!std::strcmp(rx_buffer, "/stop")) {
                     Rn.command_type = 2;
                     Rn.new_data_ready = true;
                 }
-                else if (std::strcmp(rx_buffer, "/monitor") == 0){
+                else if (!std::strcmp(rx_buffer, "/monitor")){
                     Rn.command_type = 3;
                     Rn.new_data_ready = true;
                 }
-                // Używamy spacji w formacie sscanf dla pewności
-                else if (std::sscanf(rx_buffer, "/set yr: %f", &Rn.receive_float_number) == 1) {
+                else if (std::sscanf(rx_buffer, "/set yr: %f", &Rn.receive_float_number)) {
                     Rn.command_type = 4;
                     Rn.new_data_ready = true;
                 }
                 else {
                     // Fallback dla samej liczby
-                    Rn.received_number = std::atoi(rx_buffer);
                     Rn.command_type = 0;
                     Rn.new_data_ready = true;
                 }
@@ -88,10 +87,28 @@ extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     }
 }
 
+constexpr float threshold = 2; //value%
+
+float filtrLast(float val){
+	constexpr float thresholdUp = 1 + (threshold / 100.f);
+	constexpr float thresholdDown = 1 - (threshold/100.f);
+
+	static float last_verify = val;
+	if(val * thresholdDown > last_verify || val * thresholdUp < last_verify )
+	{
+		last_verify = val;
+		return val;
+	}
+	else
+	{
+		return last_verify;
+	}
+}
+
 // nastawy PID
 //==========================================================================
-constexpr float dt = 0.1f;       // Czas próbkowania w sekundach
-constexpr uint32_t dt_ms = 100;  // Czas próbkowania w ms (dt * 1000)
+constexpr float dt = 0.1f; // Czas próbkowania w sekundach
+constexpr uint32_t dt_ms = dt * 1000;  // Czas próbkowania w ms
 constexpr uint16_t max_pwm = 1000;
 constexpr uint16_t min_pwm = 0;
 constexpr float Kp = 100;
@@ -115,11 +132,11 @@ void app_main(void)
     CsvLogger logger(&huart3);
     uint32_t now = 0;
 
-    // Timery programowe (zamiast delay)
     uint32_t last_pid_time = 0;
     uint32_t last_monitor_time = 0;
 
     bool safeData = false;
+    uint16_t numOfProbes = 0;
     bool monitorData = false;
     // ======================================
 
@@ -132,18 +149,17 @@ void app_main(void)
 
     while(true)
     {
-        // 1. Obsługa komend UART
         if(Rn.new_data_ready){
             switch(Rn.command_type){
                 case 1:{ // start sharing data
                     safeData = true;
-                    monitorData = false; // Zwykle chcemy albo jedno albo drugie
-                    counter = 0; // Reset licznika przy starcie
+                    monitorData = false;
+                    numOfProbes = Rn.received_number;
+                    counter = 0;
                 }break;
                 case 2:{ // stop
                     safeData = false;
                     monitorData = false;
-                    // Reset PID i PWM przy zatrzymaniu (bezpieczeństwo)
                     u = 0;
                     Utest = 0;
                     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
@@ -156,24 +172,22 @@ void app_main(void)
                     yr = Rn.receive_float_number;
                 }break;
                 default:{
-                    std::string msg = std::to_string(Rn.received_number);
-                    HAL_UART_Transmit(&huart3, (uint8_t*)msg.c_str(), msg.length(), 100);
+                    constexpr char msg[] = "nie znane polecenie";
+                    HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), 100);
                 }break;
             }
             Rn.new_data_ready = false;
         }
 
-        // 2. Główna pętla czasowa (10Hz / 100ms) - PID i Odczyt
         if (HAL_GetTick() - last_pid_time >= dt_ms)
         {
             last_pid_time = HAL_GetTick(); // Aktualizacja czasu
             now = last_pid_time;
 
-            // A. Odczyt temperatury (Zawsze, żeby mieć aktualne dane)
             temperature = BMP280_ReadTemperature();
+            temperature = filtrLast(temperature); // if temperature > threshold return last;
 
-            // B. Obsługa błędu -99 (Error Latching fix)
-            if (temperature <= -90.0f) // Tolerancja dla float (-99)
+            if (temperature <= -90.0f)
             {
                 // Resetujemy interfejs I2C
                 HAL_I2C_DeInit(&hi2c1);
@@ -188,18 +202,14 @@ void app_main(void)
                 continue;
             }
 
-            // C. Logika SafeData (PID + Logowanie szybkie)
+            u = pid.calculate(yr, temperature);
+		    Utest = u;
+		    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, u);
+
             if(safeData){
-                // Logowanie
                 logger.log(now, temperature);
-
-                // PID
-                u = pid.calculate(yr, temperature);
-                Utest = u;
-                __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, u);
-
-                // Auto-stop po 1000 próbkach
-                if(counter >= 1050)
+                constexpr uint8_t safe_baundry = 50;
+                if(counter >= numOfProbes + safe_baundry)
                 {
                     // Symulacja komendy STOP
                     safeData = false;
@@ -214,14 +224,11 @@ void app_main(void)
             }
         }
 
-        // 3. Logika MonitorData (Logowanie wolne - co 5s)
-        // Wykonuje się niezależnie od pętli 100ms, ale nie blokuje procesora!
         if(monitorData)
         {
             if(HAL_GetTick() - last_monitor_time >= 5000)
             {
                 last_monitor_time = HAL_GetTick();
-                // Logujemy aktualną temperaturę (odczytaną w pętli powyżej)
                 logger.log(last_monitor_time, temperature);
             }
         }

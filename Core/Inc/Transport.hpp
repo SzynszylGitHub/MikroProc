@@ -14,8 +14,8 @@ struct UART_HandlerTypeDef;
 
 class CsvLogger {
 private:
-    UART_HandleTypeDef* _huart; // Wskaźnik na uchwyt UART
-    char _buffer[64];           // Bufor na tekst
+    UART_HandleTypeDef* _huart;
+    char _buffer[64];
 
 public:
     CsvLogger(UART_HandleTypeDef* huart) : _huart(huart) {}
