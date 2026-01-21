@@ -53,7 +53,7 @@ extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
             rx_buffer[rx_index] = '\0'; // Null-terminator
 
             if (rx_index > 0) {
-                if (std::sscanf(rx_buffer, "/safeData: %d", &Rn.received_number) == 1) {
+                if (std::sscanf(rx_buffer, "/safeData: %d", &Rn.received_number)) {
                     constexpr uint16_t probes = 1000;
                 	if(!Rn.received_number) Rn.received_number = probes;
                 	Rn.command_type = 1;
@@ -67,7 +67,7 @@ extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
                     Rn.command_type = 3;
                     Rn.new_data_ready = true;
                 }
-                else if (std::sscanf(rx_buffer, "/set yr: %f", &Rn.receive_float_number) == 1) {
+                else if (std::sscanf(rx_buffer, "/set yr: %f", &Rn.receive_float_number)) {
                     Rn.command_type = 4;
                     Rn.new_data_ready = true;
                 }
@@ -114,12 +114,14 @@ float filtrLast(float val){
 //==========================================================================
 constexpr float dt = 0.1f; // Czas próbkowania w sekundach
 constexpr uint32_t dt_ms = dt * 1000;  // Czas próbkowania w ms
+
 constexpr uint16_t max_pwm = 1000;
 constexpr uint16_t min_pwm = 0;
-constexpr float Kp = 100;
-constexpr float Ki = 0.1;
-constexpr float Kd = 30;
-constexpr float Tf = 0.05;
+
+constexpr float Kp = 8.95;
+constexpr float Ki = 62.308;
+constexpr float Kd = 0;
+constexpr float Tt = 0.05;
 
 // =========================================================================
 void app_main(void)
@@ -146,7 +148,7 @@ void app_main(void)
     // ======================================
 
     // ======================================================
-    PID pid(dt, max_pwm, min_pwm, Kp, Ki, Kd, Tf);
+    PID pid(dt, max_pwm, min_pwm, Kp, Ki, Kd, Tt);
     float yr = 28.f;
     yrtest = yr;
     int u = 0;
@@ -169,6 +171,8 @@ void app_main(void)
                     u = 0;
                     Utest = 0;
                     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
+                    std::string msg = {"proces stop\n"};
+                    HAL_UART_Transmit(&huart3, (uint8_t*)msg.c_str(),msg.size() , 100);
                 }break;
                 case 3:{ // monitor only
                     monitorData = true;
@@ -176,8 +180,7 @@ void app_main(void)
                 }break;
                 case 4:{
                     yr = Rn.receive_float_number;
-                    std::string msg = {"yr: " + std::to_string(yr) +
-                    		"\n u: "+ std::to_string(u)};
+                    std::string msg = {"yr: " + std::to_string(yr) + "\n u: " + std::to_string(u)};
                     HAL_UART_Transmit(&huart3, (uint8_t*)msg.c_str(),msg.size() , 100);
                     yrtest = yr;
                 }break;
@@ -221,7 +224,7 @@ void app_main(void)
 		    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, u);
 
             if(safeData){
-                logger.log(now, temperature);
+                logger.log(now, temperature,u);
                 constexpr uint8_t safe_baundry = 50;
                 if(counter >= numOfProbes + safe_baundry)
                 {
@@ -243,7 +246,7 @@ void app_main(void)
             if(HAL_GetTick() - last_monitor_time >= 5000)
             {
                 last_monitor_time = HAL_GetTick();
-                logger.log(last_monitor_time, temperature);
+                logger.log(last_monitor_time, temperature, u);
             }
         }
     }

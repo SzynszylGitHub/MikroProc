@@ -20,8 +20,8 @@ private:
 public:
     CsvLogger(UART_HandleTypeDef* huart) : _huart(huart) {}
 
-    void log(uint32_t timestamp, float value) {
-        int len = snprintf(_buffer, sizeof(_buffer), "%lu, %.2f\r\n", timestamp, value);
+    void log(uint32_t timestamp, float value , float u = 0) {
+        int len = snprintf(_buffer, sizeof(_buffer), "%lu, %.2f,%.2f\r\n", timestamp, value ,u);
         if (len > 0) {
             HAL_UART_Transmit(_huart, (uint8_t*)_buffer, (uint16_t)len, 100);
         }
