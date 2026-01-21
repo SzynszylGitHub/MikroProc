@@ -25,6 +25,7 @@ extern "C"{
     extern float temperature;
     extern long pressure;
     extern int Utest;
+    extern float yrtest;
 }
 
 // komunikacja
@@ -52,9 +53,9 @@ extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
             rx_buffer[rx_index] = '\0'; // Null-terminator
 
             if (rx_index > 0) {
-                if (std::sscanf(rx_buffer, "/safeData: %d", &Rn.received_number)) {
+                if (std::sscanf(rx_buffer, "/safeData: %d", &Rn.received_number) == 1) {
                     constexpr uint16_t probes = 1000;
-                	if(!Rn.receive_float_number) Rn.receive_number = probes;
+                	if(!Rn.received_number) Rn.received_number = probes;
                 	Rn.command_type = 1;
                     Rn.new_data_ready = true;
                 }
@@ -66,8 +67,12 @@ extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
                     Rn.command_type = 3;
                     Rn.new_data_ready = true;
                 }
-                else if (std::sscanf(rx_buffer, "/set yr: %f", &Rn.receive_float_number)) {
+                else if (std::sscanf(rx_buffer, "/set yr: %f", &Rn.receive_float_number) == 1) {
                     Rn.command_type = 4;
+                    Rn.new_data_ready = true;
+                }
+                else if (!std::strcmp(rx_buffer, "/status")){
+                    Rn.command_type = 5;
                     Rn.new_data_ready = true;
                 }
                 else {
@@ -143,6 +148,7 @@ void app_main(void)
     // ======================================================
     PID pid(dt, max_pwm, min_pwm, Kp, Ki, Kd, Tf);
     float yr = 28.f;
+    yrtest = yr;
     int u = 0;
     uint16_t counter = 0;
     // ======================================================
@@ -170,9 +176,17 @@ void app_main(void)
                 }break;
                 case 4:{
                     yr = Rn.receive_float_number;
+                    std::string msg = {"yr: " + std::to_string(yr) +
+                    		"\n u: "+ std::to_string(u)};
+                    HAL_UART_Transmit(&huart3, (uint8_t*)msg.c_str(),msg.size() , 100);
+                    yrtest = yr;
+                }break;
+                case 5:{
+                	std::string msg = "Status: \n yr: " + std::to_string(yr) + "\n ";
+                	HAL_UART_Transmit(&huart3, (uint8_t*)msg.c_str(),msg.size(),100);
                 }break;
                 default:{
-                    constexpr char msg[] = "nie znane polecenie";
+                    constexpr char msg[] = "nie znane polecenie\n";
                     HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), 100);
                 }break;
             }
@@ -186,8 +200,8 @@ void app_main(void)
 
             temperature = BMP280_ReadTemperature();
             temperature = filtrLast(temperature); // if temperature > threshold return last;
-
-            if (temperature <= -90.0f)
+            constexpr float sensor_glicth = 26.67;
+            if (temperature <= -90.0f or temperature == sensor_glicth)
             {
                 // Resetujemy interfejs I2C
                 HAL_I2C_DeInit(&hi2c1);

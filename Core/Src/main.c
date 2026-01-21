@@ -66,6 +66,7 @@ static void MX_TIM2_Init(void);
 float temperature = 0;
 long pressure = 0;
 int Utest =0;
+float yrtest = 0;
 /* USER CODE END 0 */
 
 /**
