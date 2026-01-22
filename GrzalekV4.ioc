@@ -408,3 +408,4 @@ VP_SYS_VS_Systick.Signal=SYS_VS_Systick
 board=NUCLEO-H563ZI
 boardIOC=true
 isbadioc=false
+
