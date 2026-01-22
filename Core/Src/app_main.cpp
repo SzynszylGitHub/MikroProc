@@ -118,10 +118,10 @@ constexpr uint32_t dt_ms = dt * 1000;  // Czas próbkowania w ms
 constexpr uint16_t max_pwm = 1000;
 constexpr uint16_t min_pwm = 0;
 
-constexpr float Kp = 8.95;
-constexpr float Ki = 62.308;
+constexpr float Kp = 19.17;
+constexpr float Ki = 8.13;
 constexpr float Kd = 0;
-constexpr float Tt = 0.05;
+constexpr float Tt = 0.2;
 
 // =========================================================================
 void app_main(void)
